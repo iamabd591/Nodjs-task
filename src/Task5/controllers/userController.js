@@ -1,3 +1,4 @@
+const moment = require("moment");
 const bcryptjs = require("bcryptjs");
 const validator = require("validator");
 const User = require("../models/userModel");
@@ -15,13 +16,12 @@ const signUp = async (req, res) => {
   if (!validator.isEmail(email)) {
     return res.status(400).json({ message: "Email format is not correct" });
   }
+  const existUser = await User.findOne({ email });
+  if (existUser) {
+    return res.status(400).json({ message: "This email is already in use." });
+  }
 
   try {
-    const existUser = await User.findOne({ email });
-    if (existUser) {
-      return res.status(400).json({ message: "This email is already in use." });
-    }
-
     const hashPassword = await bcryptjs.hash(password, 10);
 
     const newUser = new User({
@@ -32,16 +32,16 @@ const signUp = async (req, res) => {
 
     const newMiningUser = new Maining({
       userId: newUser._id,
-      numberofCoins: 0,
+      minningCoins: 0,
     });
-
-    await Promise.all([newUser.save(), newMiningUser.save()]);
-
-    return res.status(201).json({
-      message: "User registered successfully",
-      user: newUser,
-      mining: newMiningUser,
-    });
+    if (newUser && newMiningUser) {
+      await Promise.all([newUser.save(), newMiningUser.save()]);
+      return res.status(201).json({
+        message: "User registered successfully",
+        user: newUser,
+        mining: newMiningUser,
+      });
+    }
   } catch (error) {
     return res
       .status(500)
@@ -197,24 +197,38 @@ const startMinningTime = async (req, res) => {
     return res.status(400).json({ message: "User ID is required" });
   }
 
-  const user = await User.findById(userId);
-  const miningUser = await Maining.findOne({ userId });
-
-  if (!user || !miningUser) {
-    return res.status(404).json({ message: "User not found" });
-  }
-
   try {
-    const startTime = Math.floor(Date.now() / 1000);
-    const maxMiningDurationInSeconds = 24 * 60 * 60;
+    const user = await User.findById(userId);
+    const miningUser = await Maining.findOne({ userId });
+
+    if (!user || !miningUser) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    if (miningUser.minigStartTime !== 0) {
+      return res
+        .status(200)
+        .json({ message: `${user.name} your mining is already started` });
+    }
+
+    const startTime = new Date();
+    const endTime = new Date(startTime.getTime() + 24 * 60 * 60 * 1000);
 
     miningUser.minigStartTime = startTime;
-    miningUser.minigEndTime = startTime + maxMiningDurationInSeconds;
+    miningUser.minigEndTime = endTime;
+
+    console.log(startTime);
+    console.log(endTime);
 
     await miningUser.save();
+    // console.log(
+    //   `Minning Started Successfully for userId:${userId}\n startTiming is ${miningUser.minigStartTime} \n endTimming ${miningUser.minigEndTime}`
+    // );
     return res.status(200).json({
       message: "Mining session started successfully.",
       userId: user._id,
+      startMinning: miningUser.minigStartTime,
+      endMinning: miningUser.minigEndTime,
     });
   } catch (error) {
     return res
@@ -224,7 +238,7 @@ const startMinningTime = async (req, res) => {
 };
 
 const updateCoins = async (req, res) => {
-  const { userId } = req.params;
+  const userId = req.params.id;
   if (!userId) {
     return res
       .status(400)
@@ -239,32 +253,40 @@ const updateCoins = async (req, res) => {
   }
 
   if (!miningUser.minigStartTime || !miningUser.minigEndTime) {
-    miningUser.numberofCoins = 0;
+    miningUser.minningCoins = 0;
     await miningUser.save();
-    return res.status(400).json({ message: "Mining has not started." });
+    return res.status(400).json({ message: "Your mining is not started yet." });
   }
 
   try {
-    const currentTime = Math.floor(Date.now() / 1000);
-    const elapsedSeconds = currentTime - miningUser.minigStartTime;
+    const currentTime = Math.floor(Date.now() / 1000); // Convert current time to seconds
+    const elapsedSeconds =
+      currentTime - Math.floor(miningUser.minigStartTime / 1000);
 
-    if (currentTime >= miningUser.minigEndTime) {
-      miningUser.numberofCoins = elapsedSeconds;
+    if (elapsedSeconds < 0) {
+      return res.status(400).json({
+        message: "Error in Calculating Coins.",
+      });
+    }
+    if (currentTime >= Math.floor(miningUser.minigEndTime / 1000)) {
+      elapsedSeconds = Math.floor(
+        (miningUser.minigStartTime - miningUser.minigEndTime) / 1000
+      );
+      miningUser.minningCoins = elapsedSeconds;
       miningUser.minigStartTime = 0;
       miningUser.minigEndTime = 0;
 
       await miningUser.save();
-
       return res.status(200).json({
-        message: `Mining session ended for user: ${userId}. Coins earned: ${miningUser.numberofCoins}`,
+        message: `Mining session ended for user: ${userId}. Coins earned: ${miningUser.minningCoins}`,
       });
     }
 
-    miningUser.numberofCoins = elapsedSeconds;
+    miningUser.minningCoins = elapsedSeconds;
     await miningUser.save();
 
     return res.status(200).json({
-      message: `User ${user.name} has earned ${miningUser.numberofCoins} mining coins.`,
+      message: `User ${user.name} has earned ${miningUser.minningCoins} mining coins.`,
     });
   } catch (error) {
     return res

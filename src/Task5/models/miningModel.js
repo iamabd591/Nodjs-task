@@ -1,6 +1,6 @@
 const mongoose = require("mongoose");
 
-const mainingSchema = new mongoose.Schema({
+const minningUser = new mongoose.Schema({
   userId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: "User",
@@ -20,5 +20,5 @@ const mainingSchema = new mongoose.Schema({
   },
 });
 
-const Maining = mongoose.model("Maining", mainingSchema);
+const Maining = mongoose.model("Maining", minningUser);
 module.exports = Maining;

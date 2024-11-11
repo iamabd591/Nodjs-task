@@ -14,7 +14,7 @@ userRouter
   .post("/api/signUp", signUp)
   .post("/api/signIn", signIn)
   .post("/api/resetEmail", resetEmail)
-  .get("/api/updateCoins", updateCoins)
+  .get("/api/updateCoins/:id", updateCoins)
   .post("/api/resetPassword", resetPassword)
   .delete("/api/deleteUser/:id", deleteUser)
   .post("/api/startMinning", startMinningTime);

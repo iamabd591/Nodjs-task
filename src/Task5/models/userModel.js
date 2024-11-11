@@ -1,6 +1,6 @@
 const mongoose = require("mongoose");
 
-const userSchema = new mongoose.Schema({
+const minningUser = new mongoose.Schema({
   name: {
     type: String,
     minlength: 10,
@@ -17,10 +17,10 @@ const userSchema = new mongoose.Schema({
     type: String,
     required: true,
     minlength: 8,
-    match:
-      /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*])[A-Za-z\d!@#$%^&*]{8,}$/,
+    // match:
+    //   /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*])[A-Za-z\d!@#$%^&*]{8,}$/,
   },
 });
 
-const User = mongoose.model("User", userSchema);
+const User = mongoose.model("User", minningUser);
 module.exports = User;
