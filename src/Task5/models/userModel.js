@@ -3,7 +3,7 @@ const mongoose = require("mongoose");
 const minningUser = new mongoose.Schema({
   name: {
     type: String,
-    minlength: 10,
+    minlength: 4,
     required: true,
     match: /^[A-Za-z]+(\s[A-Za-z]+)*$/,
   },
@@ -17,8 +17,11 @@ const minningUser = new mongoose.Schema({
     type: String,
     required: true,
     minlength: 8,
-    // match:
-    //   /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*])[A-Za-z\d!@#$%^&*]{8,}$/,
+  },
+  role: {
+    type: String,
+    enum: ["user", "admin"],
+    default: "user",
   },
 });
 

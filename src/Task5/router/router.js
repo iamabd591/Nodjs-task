@@ -1,6 +1,7 @@
 const {
   signIn,
   signUp,
+  settings,
   resetEmail,
   deleteUser,
   updateCoins,
@@ -14,6 +15,7 @@ userRouter
   .post("/api/signUp", signUp)
   .post("/api/signIn", signIn)
   .post("/api/resetEmail", resetEmail)
+  .past("/api/minningSettings", settings)
   .get("/api/updateCoins/:id", updateCoins)
   .post("/api/resetPassword", resetPassword)
   .delete("/api/deleteUser/:id", deleteUser)

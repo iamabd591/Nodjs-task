@@ -3,14 +3,15 @@ const bcryptjs = require("bcryptjs");
 const validator = require("validator");
 const User = require("../models/userModel");
 const Maining = require("../models/miningModel");
+const Setting = require("../models/setting");
 
 const signUp = async (req, res) => {
-  const { name, email, password } = req.body;
+  const { name, email, password, role } = req.body;
 
   if (!name || !email || !password) {
-    return res
-      .status(400)
-      .json({ message: "All fields are required to register a user." });
+    return res.status(400).json({
+      message: "Name, Email, and Password are required to register a user.",
+    });
   }
 
   if (!validator.isEmail(email)) {
@@ -28,20 +29,13 @@ const signUp = async (req, res) => {
       name,
       email,
       password: hashPassword,
+      role: role || "user",
     });
-
-    const newMiningUser = new Maining({
-      userId: newUser._id,
-      minningCoins: 0,
+    await newUser.save();
+    return res.status(201).json({
+      message: "User registered successfully",
+      user: newUser,
     });
-    if (newUser && newMiningUser) {
-      await Promise.all([newUser.save(), newMiningUser.save()]);
-      return res.status(201).json({
-        message: "User registered successfully",
-        user: newUser,
-        mining: newMiningUser,
-      });
-    }
   } catch (error) {
     return res
       .status(500)
@@ -199,36 +193,40 @@ const startMinningTime = async (req, res) => {
 
   try {
     const user = await User.findById(userId);
-    const miningUser = await Maining.findOne({ userId });
-
-    if (!user || !miningUser) {
+    if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
+    const userSession = await Maining.findOne({ userId });
+    const startTime = new Date().getTime();
+    let endTime = new Date(userSession.minigEndTime).getTime();
 
-    if (miningUser.minigStartTime !== 0) {
-      return res
-        .status(200)
-        .json({ message: `${user.name} your mining is already started` });
+    if (startTime <= endTime) {
+      return res.status(200).json({
+        message: "Mining already in progress.",
+        userId: user._id,
+        startMinning: userSession.minigStartTime,
+        endMinning: userSession.minigEndTime,
+      });
     }
 
-    const startTime = new Date();
-    const endTime = new Date(startTime.getTime() + 24 * 60 * 60 * 1000);
+    endTime = new Date(startTime.getTime() + 24 * 60 * 60 * 1000);
 
-    miningUser.minigStartTime = startTime;
-    miningUser.minigEndTime = endTime;
+    const newMiningUser = await Maining.findOneAndUpdate(
+      { userId: user._id },
+      {
+        userId: user._id,
+        minningCoins: 0,
+        minigStartTime: startTime,
+        minigEndTime: endTime,
+      },
+      { upsert: true, new: true }
+    );
 
-    console.log(startTime);
-    console.log(endTime);
-
-    await miningUser.save();
-    // console.log(
-    //   `Minning Started Successfully for userId:${userId}\n startTiming is ${miningUser.minigStartTime} \n endTimming ${miningUser.minigEndTime}`
-    // );
     return res.status(200).json({
       message: "Mining session started successfully.",
       userId: user._id,
-      startMinning: miningUser.minigStartTime,
-      endMinning: miningUser.minigEndTime,
+      startMinning: newMiningUser.minigStartTime,
+      endMinning: newMiningUser.minigEndTime,
     });
   } catch (error) {
     return res
@@ -295,9 +293,38 @@ const updateCoins = async (req, res) => {
   }
 };
 
+const settings = async (req, res) => {
+  const { userId, coinsPerSeconds, totalMiningTime } = req.body;
+  if (!userId) {
+    const user = await User.findById(userId);
+    if (!user && !user.role === "admin") {
+      return res.status(404).json({ message: "Only Admin Can Change Setting" });
+    }
+  }
+  if (!coinsPerSeconds || !totalMiningTime) {
+    return res
+      .status(400)
+      .json({ message: "At least one field is required to make changes" });
+  }
+  try {
+    const newSetting = new Setting({
+      coinsPerSeconds,
+      totalMiningTime,
+      createdBy: userId,
+    });
+    await newSetting.save();
+    return res.status(200).json({ message: "Settings saved successfully" });
+  } catch (error) {
+    return res
+      .status(500)
+      .json({ message: "Server error", error: error.message });
+  }
+};
+
 module.exports = {
   signIn,
   signUp,
+  settings,
   deleteUser,
   resetEmail,
   updateCoins,
