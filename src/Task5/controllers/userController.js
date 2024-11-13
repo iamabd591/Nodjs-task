@@ -6,7 +6,7 @@ const Maining = require("../models/miningModel");
 const Setting = require("../models/setting");
 
 const signUp = async (req, res) => {
-  const { name, email, password, role } = req.body;
+  const { name, email, password } = req.body;
 
   if (!name || !email || !password) {
     return res.status(400).json({
@@ -29,7 +29,6 @@ const signUp = async (req, res) => {
       name,
       email,
       password: hashPassword,
-      role: role || "user",
     });
     await newUser.save();
     return res.status(201).json({
@@ -193,14 +192,29 @@ const startMinningTime = async (req, res) => {
 
   try {
     const user = await User.findById(userId);
+    const newSetting = await Setting.findOne();
+
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
-    const userSession = await Maining.findOne({ userId });
-    const startTime = new Date().getTime();
-    let endTime = new Date(userSession.minigEndTime).getTime();
 
-    if (startTime <= endTime) {
+    if (!newSetting || !newSetting.totalMiningTime) {
+      return res
+        .status(500)
+        .json({ message: "Mining settings not configured properly" });
+    }
+
+    const userSession = await Maining.findOne({ userId });
+
+    const startTime = new Date();
+
+    const endTime = new Date(
+      startTime.getTime() + newSetting.totalMiningTime * 1000
+    );
+
+    console.log("Calculated endTime:", endTime);
+
+    if (userSession && startTime <= new Date(userSession.minigEndTime)) {
       return res.status(200).json({
         message: "Mining already in progress.",
         userId: user._id,
@@ -208,8 +222,6 @@ const startMinningTime = async (req, res) => {
         endMinning: userSession.minigEndTime,
       });
     }
-
-    endTime = new Date(startTime.getTime() + 24 * 60 * 60 * 1000);
 
     const newMiningUser = await Maining.findOneAndUpdate(
       { userId: user._id },
@@ -244,6 +256,7 @@ const updateCoins = async (req, res) => {
   }
 
   const user = await User.findById(userId);
+  const newSetting = await Setting.findOne();
   const miningUser = await Maining.findOne({ userId });
 
   if (!user || !miningUser) {
@@ -257,8 +270,8 @@ const updateCoins = async (req, res) => {
   }
 
   try {
-    const currentTime = Math.floor(Date.now() / 1000); // Convert current time to seconds
-    const elapsedSeconds =
+    const currentTime = Math.floor(Date.now() / 1000);
+    let elapsedSeconds =
       currentTime - Math.floor(miningUser.minigStartTime / 1000);
 
     if (elapsedSeconds < 0) {
@@ -270,7 +283,9 @@ const updateCoins = async (req, res) => {
       elapsedSeconds = Math.floor(
         (miningUser.minigStartTime - miningUser.minigEndTime) / 1000
       );
-      miningUser.minningCoins = elapsedSeconds;
+      miningUser.minningCoins = Math.floor(
+        elapsedSeconds * newSetting.coinsPerSeconds
+      );
       miningUser.minigStartTime = 0;
       miningUser.minigEndTime = 0;
 
@@ -280,7 +295,9 @@ const updateCoins = async (req, res) => {
       });
     }
 
-    miningUser.minningCoins = elapsedSeconds;
+    miningUser.minningCoins = Math.floor(
+      elapsedSeconds * newSetting.coinsPerSeconds
+    );
     await miningUser.save();
 
     return res.status(200).json({
@@ -295,9 +312,15 @@ const updateCoins = async (req, res) => {
 
 const settings = async (req, res) => {
   const { userId, coinsPerSeconds, totalMiningTime } = req.body;
-  if (!userId) {
+  console.log(userId);
+  console.log(coinsPerSeconds);
+  console.log(totalMiningTime);
+  if (!userId || !coinsPerSeconds || !totalMiningTime) {
+    return res.status(400).json({ message: "All fileds are required" });
+  }
+  if (userId) {
     const user = await User.findById(userId);
-    if (!user && !user.role === "admin") {
+    if (!user || user.role !== "admin") {
       return res.status(404).json({ message: "Only Admin Can Change Setting" });
     }
   }
@@ -307,9 +330,10 @@ const settings = async (req, res) => {
       .json({ message: "At least one field is required to make changes" });
   }
   try {
+    const miningTime = totalMiningTime * 60 * 60;
     const newSetting = new Setting({
       coinsPerSeconds,
-      totalMiningTime,
+      totalMiningTime: miningTime,
       createdBy: userId,
     });
     await newSetting.save();

@@ -5,7 +5,7 @@ const setting = new mongoose.Schema({
     required: true,
   },
   totalMiningTime: {
-    type: Date,
+    type: Number,
     default: null,
   },
   createdBy: {
