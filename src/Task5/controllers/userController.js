@@ -2,11 +2,13 @@ const moment = require("moment");
 const bcryptjs = require("bcryptjs");
 const validator = require("validator");
 const User = require("../models/userModel");
-const Maining = require("../models/miningModel");
 const Setting = require("../models/setting");
+const Maining = require("../models/miningModel");
+const userMembership = require("../models/membership");
+const purchaseMembership = require("../models/membership");
 
 const signUp = async (req, res) => {
-  const { name, email, password } = req.body;
+  const { name, email, password, role } = req.body;
 
   if (!name || !email || !password) {
     return res.status(400).json({
@@ -29,6 +31,9 @@ const signUp = async (req, res) => {
       name,
       email,
       password: hashPassword,
+      role: "user",
+      userMembership: "Free",
+      memberShipStartDate: Date.now(),
     });
     await newUser.save();
     return res.status(201).json({
@@ -345,13 +350,22 @@ const settings = async (req, res) => {
   }
 };
 
+const createAndUpdateMembership = async (req, res) => {};
+
+const purchaseMembership = async (req, res) => {};
+
+const adminRegistration = async (req, res) => {};
+
 module.exports = {
   signIn,
   signUp,
   settings,
-  deleteUser,
   resetEmail,
+  deleteUser,
   updateCoins,
   resetPassword,
   startMinningTime,
+  adminRegistration,
+  purchaseMembership,
+  createAndUpdateMembership,
 };

@@ -23,6 +23,18 @@ const minningUser = new mongoose.Schema({
     enum: ["user", "admin"],
     default: "user",
   },
+  userMembership: {
+    type: String,
+    default: "Free",
+  },
+  memberShipStartDate: {
+    type: Date,
+    default: Date.now(),
+  },
+  memberShipEndDate: {
+    type: Date,
+    default: null,
+  },
 });
 
 const User = mongoose.model("User", minningUser);
