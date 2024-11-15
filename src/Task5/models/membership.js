@@ -17,6 +17,14 @@ const membershiSchema = new mongoose.Schema({
     type: Number,
     required: true,
   },
+  coinsPerSeconds: {
+    type: Number,
+    required: true,
+  },
+  minningTime: {
+    type: Number,
+    required: true,
+  },
   createdAt: {
     type: Date,
     default: Date.now(),

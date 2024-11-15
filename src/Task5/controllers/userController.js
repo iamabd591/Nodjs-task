@@ -351,20 +351,36 @@ const settings = async (req, res) => {
 };
 
 const createAndUpdateMembership = async (req, res) => {
-  const { name, description, price, duration, membershipId } = req.body;
+  const {
+    name,
+    price,
+    duration,
+    minningTime,
+    description,
+    membershipId,
+    coinsPerSeconds,
+  } = req.body;
 
   if (!membershipId) {
-    if (!name || !description || !price || duration == null) {
+    if (
+      !name ||
+      !price ||
+      !description ||
+      !minningTime ||
+      !coinsPerSeconds ||
+      duration == null
+    ) {
       return res.status(400).json({
         message:
-          "All fields (name, description, price, duration) are required.",
+          "All fields (name, description, price, duration,minningTime, coinsPerSeconds) are required.",
       });
     }
 
-    if (duration < 0) {
-      return res
-        .status(400)
-        .json({ message: "Duration must be a positive value." });
+    if (duration < 0 || coinsPerSeconds < 0 || minningTime < 0) {
+      return res.status(400).json({
+        message:
+          "Duration , Coins Per Seconds and Minning Time must be a positive value.",
+      });
     }
 
     try {
@@ -373,6 +389,8 @@ const createAndUpdateMembership = async (req, res) => {
         price,
         duration,
         description,
+        minningTime,
+        coinsPerSeconds,
       });
       await newMembership.save();
       return res
@@ -386,7 +404,11 @@ const createAndUpdateMembership = async (req, res) => {
     }
   }
 
-  if (!name && !description && !price && duration == null) {
+  if (
+    (!name && !description && !price && duration == null) ||
+    !coinsPerSeconds ||
+    !minningTime
+  ) {
     return res.status(400).json({
       message:
         "At least one field (name, description, price, duration) is required for update.",
@@ -402,9 +424,11 @@ const createAndUpdateMembership = async (req, res) => {
     }
 
     if (name) membership.name = name;
-    if (description) membership.description = description;
     if (price) membership.price = price;
     if (duration != null) membership.duration = duration;
+    if (minningTime) membership.minningTime = minningTime;
+    if (description) membership.description = description;
+    if (coinsPerSeconds) membership.coinsPerSeconds = coinsPerSeconds;
 
     membership.updateAt = Date.now();
     await membership.save();
@@ -426,8 +450,8 @@ const purchaseMembership = async (req, res) => {
     email,
     cardNumber,
     securityCode,
-    cardValidDate,
     membershipId,
+    cardValidDate,
   } = req.body;
 
   if (
