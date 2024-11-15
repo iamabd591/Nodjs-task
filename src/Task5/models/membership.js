@@ -5,12 +5,12 @@ const membershiSchema = new mongoose.Schema({
     required: true,
     minlength: 5,
   },
-  descriprion: {
+  description: {
     type: String,
     required: true,
   },
   price: {
-    type: Number,
+    type: String,
     required: true,
   },
   duration: {
@@ -23,7 +23,7 @@ const membershiSchema = new mongoose.Schema({
   },
   updateAt: {
     type: Date,
-    default: Date.now(),
+    default: null,
   },
   createdBy: {
     type: mongoose.Schema.Types.ObjectId,

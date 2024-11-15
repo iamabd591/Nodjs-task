@@ -5,7 +5,7 @@ const User = require("../models/userModel");
 const Setting = require("../models/setting");
 const Maining = require("../models/miningModel");
 const userMembership = require("../models/membership");
-const purchaseMembership = require("../models/membership");
+const purchaseMembership = require("../models/purchaseMembership");
 
 const signUp = async (req, res) => {
   const { name, email, password, role } = req.body;
@@ -350,11 +350,165 @@ const settings = async (req, res) => {
   }
 };
 
-const createAndUpdateMembership = async (req, res) => {};
+const createAndUpdateMembership = async (req, res) => {
+  const { name, description, price, duration, membershipId } = req.body;
 
-const purchaseMembership = async (req, res) => {};
+  if (!membershipId) {
+    if (!name || !description || !price || duration == null) {
+      return res.status(400).json({
+        message:
+          "All fields (name, description, price, duration) are required.",
+      });
+    }
 
-const adminRegistration = async (req, res) => {};
+    if (duration < 0) {
+      return res
+        .status(400)
+        .json({ message: "Duration must be a positive value." });
+    }
+
+    try {
+      const newMembership = new userMembership({
+        name,
+        price,
+        duration,
+        description,
+      });
+      await newMembership.save();
+      return res
+        .status(201)
+        .json({ message: "Membership created successfully." });
+    } catch (error) {
+      return res.status(500).json({
+        message: "Server error while creating membership.",
+        error: error.message,
+      });
+    }
+  }
+
+  if (!name && !description && !price && duration == null) {
+    return res.status(400).json({
+      message:
+        "At least one field (name, description, price, duration) is required for update.",
+    });
+  }
+
+  try {
+    const membership = await userMembership.findById(membershipId);
+    if (!membership) {
+      return res.status(404).json({
+        message: `Membership not found with ID: ${membershipId}`,
+      });
+    }
+
+    if (name) membership.name = name;
+    if (description) membership.description = description;
+    if (price) membership.price = price;
+    if (duration != null) membership.duration = duration;
+
+    membership.updateAt = Date.now();
+    await membership.save();
+
+    return res
+      .status(200)
+      .json({ message: "Membership updated successfully." });
+  } catch (error) {
+    return res.status(500).json({
+      message: "Server error while updating membership.",
+      error: error.message,
+    });
+  }
+};
+
+const purchaseMembership = async (req, res) => {
+  const {
+    userId,
+    email,
+    cardNumber,
+    securityCode,
+    cardValidDate,
+    membershipId,
+  } = req.body;
+
+  if (
+    !email ||
+    !cardNumber ||
+    !securityCode ||
+    !cardValidDate ||
+    !userId ||
+    !membershipId
+  ) {
+    return res.status(400).json({
+      message:
+        "All fields (email, cardNumber, securityCode, cardValidDate, userId, membershipId) are required to purchase membership.",
+    });
+  }
+
+  if (!validator.isEmail(email)) {
+    return res.status(400).json({ message: "Invalid email format." });
+  }
+
+  if (!/^\d{16}$/.test(cardNumber)) {
+    return res
+      .status(400)
+      .json({ message: "Card number must be exactly 16 digits." });
+  }
+
+  if (!/^\d{3,4}$/.test(securityCode)) {
+    return res
+      .status(400)
+      .json({ message: "Security code must be 3 or 4 digits." });
+  }
+
+  const [month, year] = cardValidDate.split("/").map(Number);
+  if (
+    isNaN(month) ||
+    isNaN(year) ||
+    month < 1 ||
+    month > 12 ||
+    new Date(`20${year}`, month - 1) < new Date()
+  ) {
+    return res
+      .status(400)
+      .json({ message: "Card expiration date is invalid or expired." });
+  }
+
+  try {
+    const membership = await userMembership.findById(membershipId);
+    const user = await User.findById(userId);
+
+    if (!membership) {
+      return res.status(404).json({ message: "Membership not found." });
+    }
+    if (!user) {
+      return res.status(404).json({ message: "User not found." });
+    }
+
+    user.userMembership = membership.name;
+    user.memberShipEndDate = new Date(
+      Date.now() + membership.duration * 24 * 60 * 60 * 1000
+    );
+
+    await user.save();
+
+    return res.status(200).json({
+      message: "Membership purchased successfully.",
+      user: {
+        userId: user._id,
+        membership: user.userMembership,
+        startDate: user.memberShipStartDate,
+        endDate: user.memberShipEndDate,
+      },
+    });
+  } catch (error) {
+    return res.status(500).json({
+      message: "Server error while purchasing membership.",
+      error: error.message,
+    });
+  }
+};
+
+// const adminRegistration = async (req, res) => {};
 
 module.exports = {
   signIn,
