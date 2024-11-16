@@ -7,9 +7,11 @@ const {
   updateCoins,
   resetPassword,
   startMinningTime,
-  createAndUpdateMembership,
-  purchaseMembership,
+  deleteMembership,
+  getAllMemberships,
   adminRegistration,
+  userPurchaseMembership,
+  createAndUpdateMembership,
 } = require("../controllers/userController");
 const express = require("express");
 const userRouter = express.Router();
@@ -23,8 +25,10 @@ userRouter
   .post("/api/resetPassword", resetPassword)
   .delete("/api/deleteUser/:id", deleteUser)
   .post("/api/startMinning", startMinningTime)
+  .get("/api/getAllMembership", getAllMemberships)
   .post("/api/adminRegistration", adminRegistration)
-  .post("/api/purchaseMembership", purchaseMembership)
+  .delete("/api/deleteMembership/:id", deleteMembership)
+  .post("/api/purchaseMembership", userPurchaseMembership)
   .post("/api/createAndUpdateMembership", createAndUpdateMembership);
 
 module.exports = userRouter;

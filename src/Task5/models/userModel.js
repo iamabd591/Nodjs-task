@@ -35,6 +35,10 @@ const minningUser = new mongoose.Schema({
     type: Date,
     default: null,
   },
+  membershipId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "membership",
+  },
 });
 
 const User = mongoose.model("User", minningUser);

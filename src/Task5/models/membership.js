@@ -3,7 +3,7 @@ const membershiSchema = new mongoose.Schema({
   name: {
     type: String,
     required: true,
-    minlength: 5,
+    minlength: 4,
   },
   description: {
     type: String,
@@ -15,7 +15,7 @@ const membershiSchema = new mongoose.Schema({
   },
   duration: {
     type: Number,
-    required: true,
+    // required: true,
   },
   coinsPerSeconds: {
     type: Number,
@@ -33,9 +33,9 @@ const membershiSchema = new mongoose.Schema({
     type: Date,
     default: null,
   },
-  createdBy: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: "Admin",
+  adminId: {
+    type: String,
+    required: true,
   },
 });
 

@@ -1,0 +1,70 @@
+{
+  "message": "Memberships fetched successfully.",
+  "allMemberShip": [
+    {
+      "_id": "67387e7219ddaff97e029ea5",
+      "name": "free",
+      "description": "Its a Free Memebership For Basic User Minning Duration is 1 Hours per day and Coins per second is 0.0025",
+      "price": "0",
+      "duration": null,
+      "coinsPerSeconds": 0.0025,
+      "minningTime": 3600,
+      "createdAt": "2024-11-16T11:13:54.830Z",
+      "updateAt": null,
+      "adminId": "67386b104467a38d765fb598",
+      "__v": 0
+    },
+    {
+      "_id": "6738810ede6a3932a671c91d",
+      "name": "gold",
+      "description": "Its a Gold Memebership For User Minning Duration is 3 Hours per day and Coins per second is 0.0050",
+      "price": "$24.99",
+      "duration": 14,
+      "coinsPerSeconds": 0.005,
+      "minningTime": 10800,
+      "createdAt": "2024-11-16T11:25:02.195Z",
+      "updateAt": null,
+      "adminId": "67386b104467a38d765fb598",
+      "__v": 0
+    },
+    {
+      "_id": "673881c4de6a3932a671c921",
+      "name": "silver",
+      "description": "Its a Silver Memebership For User Minning Duration is 5 Hours per day and Coins per second is 0.0075",
+      "price": "$99.99",
+      "duration": 30,
+      "coinsPerSeconds": 0.0075,
+      "minningTime": 18000,
+      "createdAt": "2024-11-16T11:28:04.704Z",
+      "updateAt": "2024-11-16T11:58:40.371Z",
+      "adminId": "67386b104467a38d765fb598",
+      "__v": 0
+    },
+    {
+      "_id": "6738830a3aa80522de5e8c54",
+      "name": "Platinum",
+      "description": "Its a Platinum Memebership For User Minning Duration is 8 Hours per day and Coins per second is 0.0095",
+      "price": "$149.99",
+      "duration": 180,
+      "coinsPerSeconds": 0.0075,
+      "minningTime": 28800,
+      "createdAt": "2024-11-16T11:33:30.335Z",
+      "updateAt": "2024-11-16T11:56:33.748Z",
+      "adminId": "67386b104467a38d765fb598",
+      "__v": 0
+    },
+    {
+      "_id": "6738837c3aa80522de5e8c58",
+      "name": "Platinum Plus",
+      "description": "Its a Platinum Plus Memebership For User Minning Duration is 10 Hours per day and Coins per second is 1",
+      "price": "$199.99",
+      "duration": 365,
+      "coinsPerSeconds": 1,
+      "minningTime": 36000,
+      "createdAt": "2024-11-16T11:35:24.408Z",
+      "updateAt": "2024-11-16T11:38:39.611Z",
+      "adminId": "67386b104467a38d765fb598",
+      "__v": 0
+    }
+  ]
+}

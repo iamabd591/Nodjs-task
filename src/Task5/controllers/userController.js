@@ -1,3 +1,4 @@
+const fs = require("fs");
 const moment = require("moment");
 const bcryptjs = require("bcryptjs");
 const validator = require("validator");
@@ -17,14 +18,34 @@ const signUp = async (req, res) => {
   }
 
   if (!validator.isEmail(email)) {
-    return res.status(400).json({ message: "Email format is not correct" });
+    return res.status(400).json({ message: "Invalid email format." });
   }
-  const existUser = await User.findOne({ email });
-  if (existUser) {
-    return res.status(400).json({ message: "This email is already in use." });
+
+  const restrictedEmails = ["admin@gmail.com"];
+  if (restrictedEmails.includes(email.toLowerCase())) {
+    return res.status(400).json({
+      message: "This email is not allowed for registration.",
+    });
+  }
+
+  if (password.length < 8) {
+    return res.status(400).json({
+      message: "Password must be at least 8 characters long.",
+    });
+  }
+
+  if (role && role.toLowerCase() === "admin") {
+    return res.status(400).json({
+      message: "You cannot register as an admin.",
+    });
   }
 
   try {
+    const existUser = await User.findOne({ email });
+    if (existUser) {
+      return res.status(400).json({ message: "This email is already in use." });
+    }
+
     const hashPassword = await bcryptjs.hash(password, 10);
 
     const newUser = new User({
@@ -33,17 +54,22 @@ const signUp = async (req, res) => {
       password: hashPassword,
       role: "user",
       userMembership: "Free",
-      memberShipStartDate: Date.now(),
+      memberShipStartDate: new Date(),
+      memberShipEndDate: null,
     });
+
     await newUser.save();
+
+    const { password: _, ...userWithoutPassword } = newUser.toObject();
+
     return res.status(201).json({
-      message: "User registered successfully",
-      user: newUser,
+      message: "User registered successfully.",
+      user: userWithoutPassword,
     });
   } catch (error) {
-    return res
-      .status(500)
-      .json({ message: `Internal server error: ${error.message}` });
+    return res.status(500).json({
+      message: `Internal server error: ${error.message}`,
+    });
   }
 };
 
@@ -339,7 +365,7 @@ const settings = async (req, res) => {
     const newSetting = new Setting({
       coinsPerSeconds,
       totalMiningTime: miningTime,
-      createdBy: userId,
+      adminId: userId,
     });
     await newSetting.save();
     return res.status(200).json({ message: "Settings saved successfully" });
@@ -354,6 +380,7 @@ const createAndUpdateMembership = async (req, res) => {
   const {
     name,
     price,
+    adminId,
     duration,
     minningTime,
     description,
@@ -361,61 +388,94 @@ const createAndUpdateMembership = async (req, res) => {
     coinsPerSeconds,
   } = req.body;
 
-  if (!membershipId) {
-    if (
-      !name ||
-      !price ||
-      !description ||
-      !minningTime ||
-      !coinsPerSeconds ||
-      duration == null
-    ) {
-      return res.status(400).json({
-        message:
-          "All fields (name, description, price, duration,minningTime, coinsPerSeconds) are required.",
-      });
-    }
-
-    if (duration < 0 || coinsPerSeconds < 0 || minningTime < 0) {
-      return res.status(400).json({
-        message:
-          "Duration , Coins Per Seconds and Minning Time must be a positive value.",
-      });
-    }
-
-    try {
-      const newMembership = new userMembership({
-        name,
-        price,
-        duration,
-        description,
-        minningTime,
-        coinsPerSeconds,
-      });
-      await newMembership.save();
+  if (adminId) {
+    const isAdmin = await User.findById(adminId);
+    if (!isAdmin || isAdmin.role.toLowerCase() !== "admin") {
       return res
-        .status(201)
-        .json({ message: "Membership created successfully." });
-    } catch (error) {
-      return res.status(500).json({
-        message: "Server error while creating membership.",
-        error: error.message,
-      });
+        .status(404)
+        .json({ message: "Only Admin Can Do CRUD Opreation" });
     }
-  }
-
-  if (
-    (!name && !description && !price && duration == null) ||
-    !coinsPerSeconds ||
-    !minningTime
-  ) {
-    return res.status(400).json({
-      message:
-        "At least one field (name, description, price, duration) is required for update.",
-    });
   }
 
   try {
+    if (!membershipId) {
+      if (!name || !description || !minningTime || !coinsPerSeconds) {
+        return res.status(400).json({
+          message:
+            "Fields (name, description, minningTime, coinsPerSeconds) are required. For non-free memberships, price and duration are also required.",
+        });
+      }
+
+      const isFreeMembership = name.toLowerCase() === "free";
+      if (!isFreeMembership) {
+        if (!price || typeof duration !== "number") {
+          return res.status(400).json({
+            message:
+              "For non-free memberships, price and duration are required.",
+          });
+        }
+
+        if (
+          duration <= 0 ||
+          price <= 0 ||
+          coinsPerSeconds <= 0 ||
+          minningTime <= 0
+        ) {
+          return res.status(400).json({
+            message:
+              "Duration, Price, Coins Per Seconds and Minning Time  must be greater than zero.",
+          });
+        }
+      } else {
+        if (minningTime <= 0 || coinsPerSeconds <= 0) {
+          return res.status(400).json({
+            message:
+              "Free memberships must have valid minningTime and coinsPerSeconds values greater than zero.",
+          });
+        }
+      }
+
+      const minningTimeInSeconds = minningTime * 3600;
+      const membershipExist = await userMembership.findOne({
+        name: { $regex: new RegExp(`^${name}$`, "i") },
+      });
+      if (membershipExist) {
+        return res.status(400).json({
+          message: `${name} membership already exists. To update, provide the membership ID.`,
+        });
+      }
+      const newMembership = new userMembership({
+        name,
+        adminId,
+        description,
+        coinsPerSeconds,
+        createdAt: Date.now(),
+        minningTime: minningTimeInSeconds,
+        price: isFreeMembership ? "0" : `$${price}`,
+        duration: isFreeMembership ? null : duration,
+      });
+      await newMembership.save();
+
+      return res.status(201).json({
+        message: "Membership created successfully.",
+        membership: newMembership,
+      });
+    }
+
+    if (
+      !name &&
+      !price &&
+      !description &&
+      typeof duration !== "number" &&
+      typeof minningTime !== "number" &&
+      typeof coinsPerSeconds !== "number"
+    ) {
+      return res.status(400).json({
+        message:
+          "At least one field (name, description, price, duration, minningTime, coinsPerSeconds) is required for update.",
+      });
+    }
+
     const membership = await userMembership.findById(membershipId);
     if (!membership) {
       return res.status(404).json({
@@ -425,26 +485,32 @@ const createAndUpdateMembership = async (req, res) => {
 
     if (name) membership.name = name;
     if (price) membership.price = price;
-    if (duration != null) membership.duration = duration;
-    if (minningTime) membership.minningTime = minningTime;
+    if (typeof duration === "number" && duration > 0) {
+      membership.duration = duration;
+    }
+    if (typeof minningTime === "number" && minningTime > 0) {
+      membership.minningTime = minningTime * 3600;
+    }
     if (description) membership.description = description;
-    if (coinsPerSeconds) membership.coinsPerSeconds = coinsPerSeconds;
+    if (typeof coinsPerSeconds === "number" && coinsPerSeconds > 0) {
+      membership.coinsPerSeconds = coinsPerSeconds;
+    }
 
-    membership.updateAt = Date.now();
+    membership.updateAt = new Date();
     await membership.save();
 
     return res
       .status(200)
-      .json({ message: "Membership updated successfully." });
+      .json({ message: "Membership updated successfully.", membership });
   } catch (error) {
     return res.status(500).json({
-      message: "Server error while updating membership.",
+      message: "Server error while processing membership.",
       error: error.message,
     });
   }
 };
 
-const purchaseMembership = async (req, res) => {
+const userPurchaseMembership = async (req, res) => {
   const {
     userId,
     email,
@@ -532,7 +598,119 @@ const purchaseMembership = async (req, res) => {
   }
 };
 
-// const adminRegistration = async (req, res) => {};
+const deleteMembership = async (req, res) => {
+  if (!req.params.id) {
+    return res
+      .status(400)
+      .json({ message: "Invalid URL. Membership ID is required." });
+  }
+
+  try {
+    const membership = await userMembership.findByIdAndDelete(req.params.id);
+
+    if (!membership) {
+      return res.status(404).json({ message: "Membership is not found." });
+    }
+
+    return res
+      .status(200)
+      .json({ message: "Membership deleted successfully." });
+  } catch (error) {
+    return res
+      .status(500)
+      .json({ message: "Server error.", error: error.message });
+  }
+};
+
+const getAllMemberships = async (req, res) => {
+  try {
+    const allMemberships = await userMembership.find();
+    if (allMemberships.length === 0) {
+      return res.status(404).json({ message: "No memberships found." });
+    }
+
+    const membershipData = {
+      message: "Memberships fetched successfully.",
+      allMemberShip: allMemberships,
+    };
+    const jsonData = JSON.stringify(membershipData, null, 2);
+    const filePath = "memberships.json";
+
+    fs.writeFile(filePath, jsonData, (err) => {
+      if (err) {
+        console.error("Error writing to file", err);
+        return res.status(500).json({
+          message: "Error writing to JSON file.",
+          error: err.message,
+        });
+      }
+
+      return res.status(200).json(membershipData);
+    });
+  } catch (error) {
+    return res.status(500).json({
+      message: "Server error while fetching memberships.",
+      error: error.message,
+    });
+  }
+};
+
+const adminRegistration = async (req, res) => {
+  const { name, email, password, role } = req.body;
+
+  if (!name || !email || !password || !role) {
+    return res.status(400).json({ message: "All fields are required." });
+  }
+
+  if (!validator.isEmail(email)) {
+    return res.status(400).json({ message: "Invalid email format." });
+  }
+
+  if (password.length < 8) {
+    return res.status(400).json({
+      message: "Password must be at least 8 characters long.",
+    });
+  }
+
+  if (role.toLowerCase() !== "admin") {
+    return res
+      .status(400)
+      .json({ message: "Only admins can register using this endpoint." });
+  }
+
+  try {
+    const existingUser = await User.findOne({ email });
+    if (existingUser) {
+      return res.status(400).json({ message: "This email is already in use." });
+    }
+
+    const hashedPassword = await bcryptjs.hash(password, 10);
+
+    const newAdmin = new User({
+      name,
+      email,
+      role: "admin",
+      membershipId: null,
+      userMembership: null,
+      memberShipEndDate: null,
+      password: hashedPassword,
+      memberShipStartDate: null,
+    });
+
+    await newAdmin.save();
+    const { password: _, ...adminWithoutPassword } = newAdmin.toObject();
+
+    return res.status(201).json({
+      message: "Admin registered successfully.",
+      admin: adminWithoutPassword,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      message: "Internal server error.",
+      error: error.message,
+    });
+  }
+};
 
 module.exports = {
   signIn,
@@ -543,7 +721,9 @@ module.exports = {
   updateCoins,
   resetPassword,
   startMinningTime,
+  deleteMembership,
+  getAllMemberships,
   adminRegistration,
-  purchaseMembership,
+  userPurchaseMembership,
   createAndUpdateMembership,
 };
