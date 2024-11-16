@@ -4,11 +4,18 @@ const minningUser = new mongoose.Schema({
   userId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: "User",
-    required: true,
   },
   minningCoins: {
     type: Number,
     default: 0,
+  },
+  isDailyReward: {
+    type: Boolean,
+    default: false,
+  },
+  dailyRewardTime: {
+    type: Date,
+    default: null,
   },
   minigStartTime: {
     type: Date,
@@ -17,6 +24,10 @@ const minningUser = new mongoose.Schema({
   minigEndTime: {
     type: Date,
     default: null,
+  },
+  rewardLogin: {
+    type: Boolean,
+    default: false,
   },
 });
 

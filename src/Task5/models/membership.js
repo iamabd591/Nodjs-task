@@ -25,6 +25,10 @@ const membershiSchema = new mongoose.Schema({
     type: Number,
     required: true,
   },
+  dailyRewardCoins: {
+    type: Number,
+    default: null,
+  },
   createdAt: {
     type: Date,
     default: Date.now(),

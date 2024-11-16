@@ -51,20 +51,33 @@ const signUp = async (req, res) => {
     const newUser = new User({
       name,
       email,
-      password: hashPassword,
       role: "user",
+      password: hashPassword,
       userMembership: "Free",
-      memberShipStartDate: new Date(),
       memberShipEndDate: null,
+      memberShipStartDate: new Date(),
     });
 
     await newUser.save();
+
+    const newMiningUser = new Maining({
+      userId: newUser._id,
+      miningCoins: 0,
+      rewardLogin: false,
+      miningEndTime: null,
+      isDailyReward: false,
+      dailyRewardTime: null,
+      miningStartTime: null,
+    });
+
+    await newMiningUser.save();
 
     const { password: _, ...userWithoutPassword } = newUser.toObject();
 
     return res.status(201).json({
       message: "User registered successfully.",
       user: userWithoutPassword,
+      minningUser: newMiningUser,
     });
   } catch (error) {
     return res.status(500).json({
@@ -86,8 +99,14 @@ const signIn = async (req, res) => {
     return res.status(400).json({ message: "Invalid email format." });
   }
 
+  if (password.length < 8) {
+    return res
+      .status(400)
+      .json({ message: "Password lenght should be 8 character long." });
+  }
+
   try {
-    const user = await User.findOne({ email });
+    const user = await User.findOne({ email }).populate("membershipId");
     if (!user) {
       return res.status(404).json({ message: "User not found." });
     }
@@ -97,12 +116,40 @@ const signIn = async (req, res) => {
       return res.status(400).json({ message: "Invalid password." });
     }
 
-    const { password: _, ...userData } = user.toObject();
+    let userMinning = await Maining.findOne({ userId: user._id });
+    if (userMinning) {
+      const currentDate = new Date();
+      const lastRewardTime = userMinning.dailyRewardTime;
 
-    return res.status(200).json({
-      message: "Login successful.",
-      userData,
-    });
+      if (
+        !lastRewardTime ||
+        currentDate - new Date(lastRewardTime) >= 24 * 60 * 60 * 1000
+      ) {
+        const membership = user.userMembership.toLowerCase();
+        console.log(membership);
+        const membershipDetails = await userMembership.findOne({
+          name: membership,
+        });
+        console.log(membershipDetails);
+        const dailyReward = membershipDetails.dailyRewardCoins;
+
+        userMinning.minningCoins += dailyReward;
+        userMinning.dailyRewardTime = currentDate;
+        userMinning.isDailyReward = true;
+        userMinning.rewardLogin = true;
+      } else {
+        userMinning.isDailyReward = false;
+      }
+
+      await userMinning.save();
+      const { password: _, ...userData } = user.toObject();
+
+      return res.status(200).json({
+        message: "Login successful. Daily reward applied.",
+        userData,
+        dailyReward: userMinning.isDailyReward ? userMinning.minningCoins : 0,
+      });
+    }
   } catch (error) {
     return res.status(500).json({
       message: `Internal server error: ${error.message}`,
@@ -215,66 +262,89 @@ const deleteUser = async (req, res) => {
   }
 };
 
+/* Start Minning API*/
 const startMinningTime = async (req, res) => {
   const { userId } = req.body;
+
   if (!userId) {
     return res.status(400).json({ message: "User ID is required" });
   }
 
   try {
-    const user = await User.findById(userId);
-    const newSetting = await Setting.findOne();
+    const user = await User.findById(userId).populate("membershipId");
+    // console.log(user);
+    const minningUser = await Maining.findOne({ userId: userId });
 
-    if (!user) {
-      return res.status(404).json({ message: "User not found" });
+    if (!user || !minningUser) {
+      return res.status(404).json({ message: "User or mining data not found" });
     }
 
-    if (!newSetting || !newSetting.totalMiningTime) {
+    const membership = user.userMembership.toLowerCase();
+    // console.log("Membership:", membership);
+
+    if (!membership) {
       return res
-        .status(500)
-        .json({ message: "Mining settings not configured properly" });
+        .status(400)
+        .json({ message: "User does not have an active membership." });
     }
 
-    const userSession = await Maining.findOne({ userId });
+    const membershipDetails = await userMembership.findOne({
+      name: membership,
+    });
+
+    if (!membershipDetails) {
+      return res.status(404).json({ message: "Membership details not found" });
+    }
+
+    // console.log("Membership Details:", membershipDetails);
+    // const userSession = await Maining.findById(userId);
+    // console.log(userSession);
 
     const startTime = new Date();
-
     const endTime = new Date(
-      startTime.getTime() + newSetting.totalMiningTime * 1000
+      startTime.getTime() + membershipDetails.minningTime * 1000
     );
 
-    console.log("Calculated endTime:", endTime);
+    // console.log("Start Time:", startTime);
+    // console.log("End Time:", endTime);
 
-    if (userSession && startTime <= new Date(userSession.minigEndTime)) {
-      return res.status(200).json({
-        message: "Mining already in progress.",
-        userId: user._id,
-        startMinning: userSession.minigStartTime,
-        endMinning: userSession.minigEndTime,
+    // Check if mining is already in progress
+    if (minningUser.minigStartTime && minningUser.minigEndTime) {
+      return res.status(400).json({
+        message: "User Mining is already started",
+        startTime: minningUser.minigStartTime,
+        endTime: minningUser.minigEndTime,
       });
     }
 
-    const newMiningUser = await Maining.findOneAndUpdate(
-      { userId: user._id },
-      {
-        userId: user._id,
-        minningCoins: 0,
-        minigStartTime: startTime,
-        minigEndTime: endTime,
-      },
-      { upsert: true, new: true }
-    );
+    const currentTime = new Date().getTime();
 
-    return res.status(200).json({
-      message: "Mining session started successfully.",
-      userId: user._id,
-      startMinning: newMiningUser.minigStartTime,
-      endMinning: newMiningUser.minigEndTime,
+    // Check if mining has already ended
+    if (currentTime >= minningUser.minigEndTime) {
+      minningUser.minigStartTime = null;
+      minningUser.minigEndTime = null;
+      return res.status(400).json({
+        message: "User Mining has already ended",
+        startTime: minningUser.minigStartTime,
+        endTime: minningUser.minigEndTime,
+      });
+    }
+
+    // Update mining start and end time
+    minningUser.minigStartTime = startTime;
+    minningUser.minigEndTime = endTime;
+    await minningUser.save();
+
+    return res.status(201).json({
+      message: "Mining started successfully",
+      startTime: minningUser.minigStartTime,
+      endTime: minningUser.minigEndTime,
     });
   } catch (error) {
-    return res
-      .status(500)
-      .json({ message: "Server error", error: error.message });
+    return res.status(500).json({
+      message: "Server error",
+      error: error.message,
+    });
   }
 };
 
@@ -286,53 +356,71 @@ const updateCoins = async (req, res) => {
       .json({ message: "Invalid URL. User ID is required." });
   }
 
-  const user = await User.findById(userId);
-  const newSetting = await Setting.findOne();
-  const miningUser = await Maining.findOne({ userId });
+  const user = await User.findById(userId).populate("membershipId");
+  const minningUser = await Maining.findOne({ userId: userId });
 
-  if (!user || !miningUser) {
-    return res.status(404).json({ message: "User not found" });
+  if (!user || !minningUser) {
+    return res.status(404).json({ message: "User or mining data not found" });
   }
 
-  if (!miningUser.minigStartTime || !miningUser.minigEndTime) {
-    miningUser.minningCoins = 0;
-    await miningUser.save();
+  const membership = user.userMembership.toLowerCase();
+  // console.log("Membership:", membership);
+
+  if (!membership) {
+    return res
+      .status(400)
+      .json({ message: "User does not have an active membership." });
+  }
+
+  const membershipDetails = await userMembership.findOne({
+    name: membership,
+  });
+
+  if (!membershipDetails) {
+    return res.status(404).json({ message: "Membership details not found" });
+  }
+
+  // console.log("Membership Details:", membershipDetails);
+
+  if (!minningUser.minigStartTime || !minningUser.minigEndTime) {
+    minningUser.minningCoins = 0;
+    await minningUser.save();
     return res.status(400).json({ message: "Your mining is not started yet." });
   }
 
   try {
     const currentTime = Math.floor(Date.now() / 1000);
     let elapsedSeconds =
-      currentTime - Math.floor(miningUser.minigStartTime / 1000);
+      currentTime - Math.floor(minningUser.minigStartTime / 1000);
 
     if (elapsedSeconds < 0) {
       return res.status(400).json({
         message: "Error in Calculating Coins.",
       });
     }
-    if (currentTime >= Math.floor(miningUser.minigEndTime / 1000)) {
+    if (currentTime >= Math.floor(minningUser.minigEndTime / 1000)) {
       elapsedSeconds = Math.floor(
-        (miningUser.minigStartTime - miningUser.minigEndTime) / 1000
+        (minningUser.minigStartTime - minningUser.minigEndTime) / 1000
       );
-      miningUser.minningCoins = Math.floor(
-        elapsedSeconds * newSetting.coinsPerSeconds
+      minningUser.minningCoins = Math.floor(
+        elapsedSeconds * membershipDetails.coinsPerSeconds
       );
-      miningUser.minigStartTime = 0;
-      miningUser.minigEndTime = 0;
+      minningUser.minigStartTime = 0;
+      minningUser.minigEndTime = 0;
 
-      await miningUser.save();
+      await minningUser.save();
       return res.status(200).json({
-        message: `Mining session ended for user: ${userId}. Coins earned: ${miningUser.minningCoins}`,
+        message: `Mining session ended for user: ${userId}. Coins earned: ${minningUser.minningCoins}`,
       });
     }
 
-    miningUser.minningCoins = Math.floor(
-      elapsedSeconds * newSetting.coinsPerSeconds
-    );
-    await miningUser.save();
+    minningUser.minningCoins =
+      elapsedSeconds * membershipDetails.coinsPerSeconds;
+    await minningUser.save();
+    // console.log(minningUser.minigStartTime);
 
     return res.status(200).json({
-      message: `User ${user.name} has earned ${miningUser.minningCoins} mining coins.`,
+      message: `User ${user.name} has earned ${minningUser.minningCoins} mining coins. Start Time is ${minningUser.startMinningTime} End Time is ${minningUser.minigEndTime}`,
     });
   } catch (error) {
     return res
@@ -386,6 +474,7 @@ const createAndUpdateMembership = async (req, res) => {
     description,
     membershipId,
     coinsPerSeconds,
+    dailyRewardCoins,
   } = req.body;
 
   if (adminId) {
@@ -399,10 +488,16 @@ const createAndUpdateMembership = async (req, res) => {
 
   try {
     if (!membershipId) {
-      if (!name || !description || !minningTime || !coinsPerSeconds) {
+      if (
+        !name ||
+        !description ||
+        !minningTime ||
+        !coinsPerSeconds ||
+        !dailyRewardCoins
+      ) {
         return res.status(400).json({
           message:
-            "Fields (name, description, minningTime, coinsPerSeconds) are required. For non-free memberships, price and duration are also required.",
+            "Fields (Name, Description, Minning Time, Coins Per Seconds, Daily Minning Coins) are required. For non-free memberships, price and duration are also required.",
         });
       }
 
@@ -419,18 +514,19 @@ const createAndUpdateMembership = async (req, res) => {
           duration <= 0 ||
           price <= 0 ||
           coinsPerSeconds <= 0 ||
-          minningTime <= 0
+          minningTime <= 0 ||
+          dailyRewardCoins <= 0
         ) {
           return res.status(400).json({
             message:
-              "Duration, Price, Coins Per Seconds and Minning Time  must be greater than zero.",
+              "Duration, Price, Coins Per Seconds, Minning Time and Daily Reward Coins must be greater than zero.",
           });
         }
       } else {
-        if (minningTime <= 0 || coinsPerSeconds <= 0) {
+        if (minningTime <= 0 || coinsPerSeconds <= 0 || dailyRewardCoins <= 0) {
           return res.status(400).json({
             message:
-              "Free memberships must have valid minningTime and coinsPerSeconds values greater than zero.",
+              "Free memberships must have valid Minning Time, Coins Per Seconds and Daily Reward values greater than zero.",
           });
         }
       }
@@ -451,6 +547,7 @@ const createAndUpdateMembership = async (req, res) => {
         coinsPerSeconds,
         createdAt: Date.now(),
         minningTime: minningTimeInSeconds,
+        dailyRewardCoins: dailyRewardCoins,
         price: isFreeMembership ? "0" : `$${price}`,
         duration: isFreeMembership ? null : duration,
       });
@@ -466,13 +563,14 @@ const createAndUpdateMembership = async (req, res) => {
       !name &&
       !price &&
       !description &&
+      !dailyRewardCoins &&
       typeof duration !== "number" &&
       typeof minningTime !== "number" &&
       typeof coinsPerSeconds !== "number"
     ) {
       return res.status(400).json({
         message:
-          "At least one field (name, description, price, duration, minningTime, coinsPerSeconds) is required for update.",
+          "At least one field (Name, Description, Price, Duration, Minning Time, Coins Per Seconds, Daily Reward) is required for update.",
       });
     }
 
@@ -485,6 +583,7 @@ const createAndUpdateMembership = async (req, res) => {
 
     if (name) membership.name = name;
     if (price) membership.price = price;
+    if (dailyRewardCoins) membership.dailyRewardCoins = dailyRewardCoins;
     if (typeof duration === "number" && duration > 0) {
       membership.duration = duration;
     }
