@@ -2,6 +2,7 @@ const {
   signIn,
   signUp,
   settings,
+  verifyOtp,
   resetEmail,
   deleteUser,
   updateCoins,
@@ -19,6 +20,7 @@ const userRouter = express.Router();
 userRouter
   .post("/api/signUp", signUp)
   .post("/api/signIn", signIn)
+  .post("/api/verifyOTP", verifyOtp)
   .post("/api/resetEmail", resetEmail)
   .post("/api/minningSettings", settings)
   .get("/api/updateCoins/:id", updateCoins)

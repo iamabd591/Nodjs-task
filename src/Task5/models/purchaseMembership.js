@@ -22,7 +22,7 @@ const purchaseMembership = new mongoose.Schema({
     maxlenght: 4,
   },
   cardValidDate: {
-    type: Date,
+    type: String,
     required: true,
   },
 });

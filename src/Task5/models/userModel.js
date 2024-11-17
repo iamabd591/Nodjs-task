@@ -35,6 +35,10 @@ const minningUser = new mongoose.Schema({
     type: Date,
     default: null,
   },
+  isVerified: {
+    type: Boolean,
+    default: false,
+  },
   membershipId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: "membership",

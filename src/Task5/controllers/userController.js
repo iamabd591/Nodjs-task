@@ -1,4 +1,5 @@
 const fs = require("fs");
+const crypto = require("crypto");
 const moment = require("moment");
 const bcryptjs = require("bcryptjs");
 const validator = require("validator");
@@ -7,7 +8,9 @@ const Setting = require("../models/setting");
 const Maining = require("../models/miningModel");
 const userMembership = require("../models/membership");
 const purchaseMembership = require("../models/purchaseMembership");
+const { saveOtpWithRegeneration, otpCache } = require("../../../utils");
 
+/* Sign up API */
 const signUp = async (req, res) => {
   const { name, email, password, role } = req.body;
 
@@ -16,48 +19,44 @@ const signUp = async (req, res) => {
       message: "Name, Email, and Password are required to register a user.",
     });
   }
-
   if (!validator.isEmail(email)) {
     return res.status(400).json({ message: "Invalid email format." });
   }
-
-  const restrictedEmails = ["admin@gmail.com"];
-  if (restrictedEmails.includes(email.toLowerCase())) {
-    return res.status(400).json({
-      message: "This email is not allowed for registration.",
-    });
-  }
-
   if (password.length < 8) {
     return res.status(400).json({
       message: "Password must be at least 8 characters long.",
     });
   }
-
-  if (role && role.toLowerCase() === "admin") {
+  if (["admin", "Admin"].includes(role)) {
     return res.status(400).json({
-      message: "You cannot register as an admin.",
+      message: "Registration as 'admin' is not allowed.",
     });
   }
 
   try {
-    const existUser = await User.findOne({ email });
-    if (existUser) {
-      return res.status(400).json({ message: "This email is already in use." });
+    const restrictedEmails = ["admin@gmail.com"];
+    if (restrictedEmails.includes(email.toLowerCase())) {
+      return res.status(400).json({
+        message: "This email is not allowed for registration.",
+      });
+    }
+
+    const existingUser = await User.findOne({ email });
+    if (existingUser) {
+      return res.status(400).json({ message: "Email is already registered." });
     }
 
     const hashPassword = await bcryptjs.hash(password, 10);
-
     const newUser = new User({
       name,
       email,
       role: "user",
+      isVerified: false,
       password: hashPassword,
       userMembership: "Free",
       memberShipEndDate: null,
       memberShipStartDate: new Date(),
     });
-
     await newUser.save();
 
     const newMiningUser = new Maining({
@@ -69,15 +68,16 @@ const signUp = async (req, res) => {
       dailyRewardTime: null,
       miningStartTime: null,
     });
-
     await newMiningUser.save();
+
+    saveOtpWithRegeneration(email);
 
     const { password: _, ...userWithoutPassword } = newUser.toObject();
 
     return res.status(201).json({
-      message: "User registered successfully.",
+      message: "User registered successfully. Please verify your account.",
       user: userWithoutPassword,
-      minningUser: newMiningUser,
+      miningUser: newMiningUser,
     });
   } catch (error) {
     return res.status(500).json({
@@ -86,6 +86,48 @@ const signUp = async (req, res) => {
   }
 };
 
+/* Verify OTP API */
+const verifyOtp = async (req, res) => {
+  const { email, otp } = req.body;
+
+  if (!email || !otp) {
+    return res
+      .status(400)
+      .json({ message: "Both email and OTP are required." });
+  }
+  if (!validator.isEmail(email)) {
+    return res.status(400).json({ message: "Invalid email format." });
+  }
+
+  try {
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(404).json({ message: "User not found." });
+    }
+
+    const otpData = otpCache.get(email);
+    if (!otpData) {
+      return res
+        .status(400)
+        .json({ message: "OTP has expired or is invalid." });
+    }
+    if (otpData.otp !== otp) {
+      return res.status(400).json({ message: "Invalid OTP." });
+    }
+
+    user.isVerified = true;
+    await user.save();
+    otpCache.delete(email);
+
+    return res.status(200).json({ message: "User verified successfully." });
+  } catch (error) {
+    return res.status(500).json({
+      message: `Internal server error: ${error.message}`,
+    });
+  }
+};
+
+/*Sign In API */
 const signIn = async (req, res) => {
   const { email, password } = req.body;
 
@@ -114,6 +156,12 @@ const signIn = async (req, res) => {
     const isPasswordValid = await bcryptjs.compare(password, user.password);
     if (!isPasswordValid) {
       return res.status(400).json({ message: "Invalid password." });
+    }
+
+    if (!user.isVerified) {
+      return res
+        .status(400)
+        .json({ message: "Please verify your account to login" });
     }
 
     let userMinning = await Maining.findOne({ userId: user._id });
@@ -176,6 +224,12 @@ const resetEmail = async (req, res) => {
       return res.status(404).json({ message: "User not found." });
     }
 
+    if (!user.isVerified) {
+      return res
+        .status(400)
+        .json({ message: "Please verify your account to reset email" });
+    }
+
     if (user.email !== oldEmail) {
       return res
         .status(400)
@@ -228,6 +282,12 @@ const resetPassword = async (req, res) => {
       });
     }
 
+    if (!user.isVerified) {
+      return res
+        .status(400)
+        .json({ message: "Please verify your account to reset password" });
+    }
+
     const newHashPassword = await bcryptjs.hash(newPassword, 10);
     user.password = newHashPassword;
     await user.save();
@@ -277,6 +337,12 @@ const startMinningTime = async (req, res) => {
 
     if (!user || !minningUser) {
       return res.status(404).json({ message: "User or mining data not found" });
+    }
+
+    if (!user.isVerified) {
+      return res
+        .status(400)
+        .json({ message: "Please verify your account to start minning" });
     }
 
     const membership = user.userMembership.toLowerCase();
@@ -363,8 +429,12 @@ const updateCoins = async (req, res) => {
     return res.status(404).json({ message: "User or mining data not found" });
   }
 
+  if (!user.isVerified) {
+    return res
+      .status(400)
+      .json({ message: "Please verify your account to check your coins" });
+  }
   const membership = user.userMembership.toLowerCase();
-  // console.log("Membership:", membership);
 
   if (!membership) {
     return res
@@ -379,8 +449,6 @@ const updateCoins = async (req, res) => {
   if (!membershipDetails) {
     return res.status(404).json({ message: "Membership details not found" });
   }
-
-  // console.log("Membership Details:", membershipDetails);
 
   if (!minningUser.minigStartTime || !minningUser.minigEndTime) {
     minningUser.minningCoins = 0;
@@ -398,10 +466,12 @@ const updateCoins = async (req, res) => {
         message: "Error in Calculating Coins.",
       });
     }
+
     if (currentTime >= Math.floor(minningUser.minigEndTime / 1000)) {
       elapsedSeconds = Math.floor(
-        (minningUser.minigStartTime - minningUser.minigEndTime) / 1000
+        (minningUser.minigEndTime - minningUser.minigStartTime) / 1000
       );
+
       minningUser.minningCoins = Math.floor(
         elapsedSeconds * membershipDetails.coinsPerSeconds
       );
@@ -417,10 +487,9 @@ const updateCoins = async (req, res) => {
     minningUser.minningCoins =
       elapsedSeconds * membershipDetails.coinsPerSeconds;
     await minningUser.save();
-    // console.log(minningUser.minigStartTime);
 
     return res.status(200).json({
-      message: `User ${user.name} has earned ${minningUser.minningCoins} mining coins. Start Time is ${minningUser.startMinningTime} End Time is ${minningUser.minigEndTime}`,
+      message: `User ${user.name} has earned ${minningUser.minningCoins} mining coins. Start Time is ${minningUser.minigStartTime} End Time is ${minningUser.minigEndTime}`,
     });
   } catch (error) {
     return res
@@ -611,8 +680,8 @@ const createAndUpdateMembership = async (req, res) => {
 
 const userPurchaseMembership = async (req, res) => {
   const {
-    userId,
     email,
+    userId,
     cardNumber,
     securityCode,
     membershipId,
@@ -621,11 +690,11 @@ const userPurchaseMembership = async (req, res) => {
 
   if (
     !email ||
-    !cardNumber ||
-    !securityCode ||
-    !cardValidDate ||
     !userId ||
-    !membershipId
+    !cardNumber ||
+    !membershipId ||
+    !securityCode ||
+    !cardValidDate
   ) {
     return res.status(400).json({
       message:
@@ -672,7 +741,17 @@ const userPurchaseMembership = async (req, res) => {
     if (!user) {
       return res.status(404).json({ message: "User not found." });
     }
+    if (!user.isVerified) {
+      return res
+        .status(400)
+        .json({ message: "Please verify your account to purchase membership" });
+    }
 
+    if (user.userMembership == membership.name) {
+      return res
+        .status(400)
+        .json({ message: "You already have this membership" });
+    }
     user.userMembership = membership.name;
     user.memberShipEndDate = new Date(
       Date.now() + membership.duration * 24 * 60 * 60 * 1000
@@ -685,8 +764,8 @@ const userPurchaseMembership = async (req, res) => {
       user: {
         userId: user._id,
         membership: user.userMembership,
-        startDate: user.memberShipStartDate,
         endDate: user.memberShipEndDate,
+        startDate: user.memberShipStartDate,
       },
     });
   } catch (error) {
@@ -815,6 +894,7 @@ module.exports = {
   signIn,
   signUp,
   settings,
+  verifyOtp,
   resetEmail,
   deleteUser,
   updateCoins,
