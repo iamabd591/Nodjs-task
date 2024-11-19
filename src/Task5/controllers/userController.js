@@ -36,6 +36,10 @@ const getAllUser = async (req, res) => {
     const skip = (page - 1) * limit;
     const totalItems = await User.countDocuments();
     const userData = await User.find().skip(skip).limit(limit);
+    const miningData = await Maining.find({
+      userId: { $in: userData.map((user) => user._id) },
+    });
+
     const totalPages = Math.ceil(totalItems / limit);
 
     res.json({
@@ -44,6 +48,7 @@ const getAllUser = async (req, res) => {
       limit,
       totalPages,
       data: userData,
+      minning: miningData,
     });
   } catch (error) {
     res.status(500).json({
