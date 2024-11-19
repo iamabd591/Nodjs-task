@@ -3,12 +3,54 @@ const crypto = require("crypto");
 const moment = require("moment");
 const bcryptjs = require("bcryptjs");
 const validator = require("validator");
+const nodemailer = require("nodemailer");
 const User = require("../models/userModel");
 const Setting = require("../models/setting");
 const Maining = require("../models/miningModel");
 const userMembership = require("../models/membership");
 const purchaseMembership = require("../models/purchaseMembership");
 const { saveOtpWithRegeneration, otpCache } = require("../../../utils");
+
+/* Node Mailer*/
+const transporter = nodemailer.createTransport({
+  service: "gmail",
+  auth: {
+    user: process.env.EMAIL,
+    pass: process.env.PASSWORD,
+  },
+});
+
+/* Pagination API */
+const getAllUser = async (req, res) => {
+  console.log("pagination");
+  try {
+    let page = parseInt(req.query.page) || 1;
+    let limit = parseInt(req.query.limit) || 10;
+
+    if (page <= 0 || limit <= 0) {
+      return res.status(400).json({
+        message: "Page and limit must be positive integers.",
+      });
+    }
+
+    const skip = (page - 1) * limit;
+    const totalItems = await User.countDocuments();
+    const userData = await User.find().skip(skip).limit(limit);
+    const totalPages = Math.ceil(totalItems / limit);
+
+    res.json({
+      totalItems,
+      page,
+      limit,
+      totalPages,
+      data: userData,
+    });
+  } catch (error) {
+    res.status(500).json({
+      message: `Internal server error: ${error.message}`,
+    });
+  }
+};
 
 /* Sign up API */
 const signUp = async (req, res) => {
@@ -60,18 +102,16 @@ const signUp = async (req, res) => {
     await newUser.save();
 
     const newMiningUser = new Maining({
-      userId: newUser._id,
       miningCoins: 0,
       rewardLogin: false,
+      userId: newUser._id,
       miningEndTime: null,
       isDailyReward: false,
       dailyRewardTime: null,
       miningStartTime: null,
     });
     await newMiningUser.save();
-
     saveOtpWithRegeneration(email);
-
     const { password: _, ...userWithoutPassword } = newUser.toObject();
 
     return res.status(201).json({
@@ -185,15 +225,17 @@ const signIn = async (req, res) => {
         userMinning.dailyRewardTime = currentDate;
         userMinning.isDailyReward = true;
         userMinning.rewardLogin = true;
+        await userMinning.save();
+        return res.status(200).json({
+          message: "Login successful. Daily reward applied.",
+          dailyReward: userMinning.isDailyReward ? userMinning.minningCoins : 0,
+        });
       } else {
         userMinning.isDailyReward = false;
       }
-
-      await userMinning.save();
       const { password: _, ...userData } = user.toObject();
-
       return res.status(200).json({
-        message: "Login successful. Daily reward applied.",
+        message: "Login successful.",
         userData,
         dailyReward: userMinning.isDailyReward ? userMinning.minningCoins : 0,
       });
@@ -205,6 +247,7 @@ const signIn = async (req, res) => {
   }
 };
 
+/* Reset Email API*/
 const resetEmail = async (req, res) => {
   const { userId, oldEmail, newEmail, password } = req.body;
 
@@ -257,6 +300,7 @@ const resetEmail = async (req, res) => {
   }
 };
 
+/* Reset Password API*/
 const resetPassword = async (req, res) => {
   const { userId, email, newPassword } = req.body;
 
@@ -300,6 +344,7 @@ const resetPassword = async (req, res) => {
   }
 };
 
+/* Delete User API*/
 const deleteUser = async (req, res) => {
   if (!req.params.id) {
     return res
@@ -371,8 +416,8 @@ const startMinningTime = async (req, res) => {
       startTime.getTime() + membershipDetails.minningTime * 1000
     );
 
-    // console.log("Start Time:", startTime);
-    // console.log("End Time:", endTime);
+    console.log("Start Time:", startTime);
+    console.log("End Time:", endTime);
 
     // Check if mining is already in progress
     if (minningUser.minigStartTime && minningUser.minigEndTime) {
@@ -387,8 +432,8 @@ const startMinningTime = async (req, res) => {
 
     // Check if mining has already ended
     if (currentTime >= minningUser.minigEndTime) {
-      minningUser.minigStartTime = null;
-      minningUser.minigEndTime = null;
+      minningUser.minigStartTime = 0;
+      minningUser.minigEndTime = 0;
       return res.status(400).json({
         message: "User Mining has already ended",
         startTime: minningUser.minigStartTime,
@@ -414,6 +459,7 @@ const startMinningTime = async (req, res) => {
   }
 };
 
+/* Update Coins API*/
 const updateCoins = async (req, res) => {
   const userId = req.params.id;
   if (!userId) {
@@ -451,9 +497,11 @@ const updateCoins = async (req, res) => {
   }
 
   if (!minningUser.minigStartTime || !minningUser.minigEndTime) {
-    minningUser.minningCoins = 0;
+    // minningUser.minningCoins = 0;
     await minningUser.save();
-    return res.status(400).json({ message: "Your mining is not started yet." });
+    return res.status(400).json({
+      message: `Currently your mining is not running.Your Current Coins: ${minningUser.minningCoins} `,
+    });
   }
 
   try {
@@ -498,6 +546,7 @@ const updateCoins = async (req, res) => {
   }
 };
 
+/* Setting API*/
 const settings = async (req, res) => {
   const { userId, coinsPerSeconds, totalMiningTime } = req.body;
   console.log(userId);
@@ -532,6 +581,8 @@ const settings = async (req, res) => {
       .json({ message: "Server error", error: error.message });
   }
 };
+
+/* Create and Update Membership API*/
 
 const createAndUpdateMembership = async (req, res) => {
   const {
@@ -580,10 +631,10 @@ const createAndUpdateMembership = async (req, res) => {
         }
 
         if (
-          duration <= 0 ||
           price <= 0 ||
-          coinsPerSeconds <= 0 ||
+          duration <= 0 ||
           minningTime <= 0 ||
+          coinsPerSeconds <= 0 ||
           dailyRewardCoins <= 0
         ) {
           return res.status(400).json({
@@ -677,7 +728,7 @@ const createAndUpdateMembership = async (req, res) => {
     });
   }
 };
-
+/* Purchase Membership API*/
 const userPurchaseMembership = async (req, res) => {
   const {
     email,
@@ -757,8 +808,15 @@ const userPurchaseMembership = async (req, res) => {
       Date.now() + membership.duration * 24 * 60 * 60 * 1000
     );
 
+    const newPurchcser = purchaseMembership({
+      userId: userId,
+      email: email,
+      cardNumber: cardNumber,
+      securityCode: securityCode,
+      cardValidDate: cardValidDate,
+    });
+    await newPurchcser.save();
     await user.save();
-
     return res.status(200).json({
       message: "Membership purchased successfully.",
       user: {
@@ -775,6 +833,8 @@ const userPurchaseMembership = async (req, res) => {
     });
   }
 };
+
+/* Delete Membership API*/
 
 const deleteMembership = async (req, res) => {
   if (!req.params.id) {
@@ -800,6 +860,7 @@ const deleteMembership = async (req, res) => {
   }
 };
 
+/* Fetch All Membership API*/
 const getAllMemberships = async (req, res) => {
   try {
     const allMemberships = await userMembership.find();
@@ -832,6 +893,8 @@ const getAllMemberships = async (req, res) => {
     });
   }
 };
+
+/* Admin Registration API*/
 
 const adminRegistration = async (req, res) => {
   const { name, email, password, role } = req.body;
@@ -896,6 +959,7 @@ module.exports = {
   settings,
   verifyOtp,
   resetEmail,
+  getAllUser,
   deleteUser,
   updateCoins,
   resetPassword,
